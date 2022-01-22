@@ -92,3 +92,24 @@ select * from my_table where id < 5 or model_type like 'Comet%' order by model_n
 select * from my_table where model_num like '7700%';
 select * from my_table where name = 'i7';
 select * from my_table where model_type = 'Kaby Lake' limit 1;
+
+
+update my_table set name = 'i3',model_type = 'Kaby Lake' where id = 3;
+select * from my_table;
+update my_table set name = 'i5',model_type = 'Rocket Lake S' where id=3;
+
+delete from my_table where id = 1;
+insert into my_table values(1,'i7','7700','Kaby Lake');
+
+alter table my_table add column lowest_price int unsigned; 
+desc my_table;
+
+update my_table set lowest_price = 198800 where id = 3;
+update my_table set lowest_price = 89290 where id = 4;
+update my_table set lowest_price = 214500 where id = 5;
+update my_table set lowest_price = 377800 where id = 6;
+update my_table set lowest_price = 175240 where id = 7;
+select * from my_table;
+
+select name,model_num from my_table where lowest_price <= 300000;
+select * from my_table where lowest_price >= 400000;
