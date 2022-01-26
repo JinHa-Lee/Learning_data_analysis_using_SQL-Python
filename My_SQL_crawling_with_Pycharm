@@ -1,0 +1,122 @@
+import requests
+from bs4 import BeautifulSoup
+import pymysql
+
+def get_category(category_link, category_name):
+    print(category_link, category_name)
+    res = requests.get(category_link)
+    soup = BeautifulSoup(res.content, 'html.parser')
+
+    get_items(soup, category_name, 'ALL')
+
+    sub_categories = soup.select('div.navi.group ul li > a')  # '>' 바로 아래의 a만을 찾는 것
+    for sub_category in sub_categories:
+        res = requests.get('http://corners.gmarket.co.kr/' + sub_category['href'])
+        soup = BeautifulSoup(res.content, 'html.parser')
+
+        get_items(soup, category.get_text(), sub_category.get_text())
+
+
+def get_items(html, category_name, sub_category_name):
+    item_result_list = list()
+    best_item = html.select('div.best-list')
+    for index, item in enumerate(best_item[1].select('li')):
+        ranking = index + 1
+        title = item.select_one('a.itemname').get_text()
+        ori_price = item.select_one('div.o-price')
+        dis_price = item.select_one('div.s-price strong span')
+        dis_percent = item.select_one('div.s-price span em')
+
+        if ori_price == None or ori_price.get_text() == '':  # 할인이 없는 가격에 대한 처리
+            ori_price = dis_price
+
+        if dis_price == None:  # 가격이 없고 무료라고 적힌 가격에 대한 처리
+            ori_price, dis_price = 0, 0
+        else:
+            ori_price = ori_price.get_text().replace(',', '').replace('원', '')
+            dis_price = dis_price.get_text().replace(',', '').replace('원', '')
+
+        if dis_percent == None or dis_percent.get_text() == '':
+            dis_percent = 0
+        else:
+            dis_percent = dis_percent.get_text().replace(',', '').replace('%', '')
+
+        product_link = item.select_one('div.thumb > a')  # 사진에 있는 물품 링크를 이용해서 제품 회사 데이터 크롤링
+        item_code = product_link.attrs['href'].split('=')[1].replace('&ver', '')
+
+        res = requests.get(product_link.attrs['href'])
+        soup = BeautifulSoup(res.content, 'html.parser')
+        provider = soup.select_one('div.item-topinfo_headline > p > span > a')
+        if provider == None:
+            provider = ''
+        else:
+            provider = provider.get_text()
+
+        data_dict = dict()
+
+        data_dict['category_name'] = category_name
+        data_dict['sub_category_name'] = sub_category_name
+        data_dict['ranking'] = ranking
+        data_dict['item_code'] = item_code
+        data_dict['provider'] = provider
+        data_dict['title'] = title
+        data_dict['ori_price'] = ori_price
+        data_dict['dis_price'] = dis_price
+        data_dict['dis_percent'] = dis_percent
+
+        save_data(data_dict)
+
+def save_data(data_dict):
+    print(data_dict)
+    # 해당 item_code 의 갯수를 세는 sql 구문
+    sql = """SELECT COUNT(*) FROM items WHERE item_code = '""" + data_dict['item_code'] + """';"""
+    cursor.execute(sql)
+    # sql 결과에서 result가 0 일 경우 item 에 저장되지 않은 item 이기때문에 저장한다.(여러 랭킹에 존재하는 item 에대한 오류 해결)
+    result = cursor.fetchone()
+    print(result[0])
+    # str() 의경우 str 과 int 는 덧셈할 수 없기 때문에 변환하고 더한다
+    if result[0] == 0:
+        sql = """
+            INSERT INTO items(item_code, title, ori_price, dis_price, dis_percent, provider ) VALUES(
+            '""" + data_dict['item_code'] + """',
+            '""" + data_dict['title'] + """',
+            """ + str(data_dict['ori_price']) + """,
+            """ + str(data_dict['dis_price']) + """,
+            """ + str(data_dict['dis_percent']) + """,
+            '""" + data_dict['provider'] + """'
+            )
+        """
+        cursor.execute(sql)
+
+    sql = """
+        INSERT INTO ranking(main_category,sub_category, item_ranking, item_code) VALUES(
+        '""" + data_dict['category_name'] + """',
+        '""" + data_dict['sub_category_name'] + """',
+        """ + str(data_dict['ranking']) + """,
+       '""" + data_dict['item_code'] + """'
+        )
+    """
+    cursor.execute(sql)
+
+
+db = pymysql.connect(
+    host='localhost',
+    port=3306,
+    user='root',
+    passwd='123456',
+    db='best_products',
+    charset='utf8'
+)
+
+cursor = db.cursor()
+
+res = requests.get('http://corners.gmarket.co.kr/Bestsellers')
+soup = BeautifulSoup(res.content, 'html.parser')
+# 크롤링 도중 연결 실패 오류로 인해 4개의 카테고리의 정보만 크롤링한다.
+categories = soup.select('div.gbest-cate ul.by-group li a')
+for category in categories:
+    if category.get_text() in ['ALL','패션의류','신발/잡화','화장품/헤어']:
+        get_category('http://corners.gmarket.co.kr/' + category['href'], category.get_text())
+
+db.commit()
+db.close
